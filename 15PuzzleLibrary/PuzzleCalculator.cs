@@ -11,16 +11,17 @@ namespace _15PuzzleLibrary
     public static class PuzzleCalculator
     {
         private static List<string> _stateCodes { get; set; }
+        private static List<State> _possibleTree { get; set; }
 
-        public static State CalculatePuzzle(this State initialState) {
+        internal static State CalculatePuzzle(this State initialState) {
             _stateCodes = new List<string>();
+            _possibleTree = new List<State>();
             var currentState = initialState;
             while (true)
             {
                 if (currentState.ItemOrder.IsOrderedBy()) return currentState;
                 var childState = currentState.FindChildState();
                 if (childState == null) return null;
-                childState.PreviousState = currentState;
                 currentState = childState;
             }
         }
@@ -34,6 +35,14 @@ namespace _15PuzzleLibrary
                     currentRate = calculatedRate;
                     possibleChild = currentChild;
                 }
+                ExtendPossibilityTree(currentChild);
+            }
+        }
+        private static void ExtendPossibilityTree(State currentChild) {
+            if (!_stateCodes.Contains(currentChild.StateCode) &&
+                    _possibleTree.Where(x => x.StateCode == currentChild.StateCode && x.MovementCount < currentChild.MovementCount).FirstOrDefault() == null)
+            {
+                _possibleTree.Add(currentChild);
             }
         }
         private static State FindChildState(this State currentState) {
@@ -43,34 +52,30 @@ namespace _15PuzzleLibrary
             var currentRate = double.MaxValue;
             double calculatedRate = 0;
             var currentMatrix = currentState.ItemMatrix;
-            if (pivot.X - 1 >= 0)
+            foreach (var direction in currentState.PossibleDirections)
             {
-                currentChild = currentState.PrepareState(pivot, new PivotPoint { X = pivot.X - 1, Y = pivot.Y });
+                currentChild = currentState.PrepareState(pivot, new PivotPoint { X = direction.X, Y = direction.Y });
                 DecidePossibleChild(ref possibleChild, currentChild, calculatedRate, ref currentRate);
             }
-            if (pivot.X+1 < currentState.ItemMatrix.GetLength(0))
+            possibleChild = ExtendDecisionWithFullTree(possibleChild);
+            return possibleChild;
+        }
+
+        private static State ExtendDecisionWithFullTree(State possibleChild) {
+            var minimumPossibles = _possibleTree.Where(x => !_stateCodes.Contains(x.StateCode)).OrderBy(p => p.StateRate).ToList();
+            var minimumPossible = minimumPossibles.OrderBy(x => x.MovementCount).FirstOrDefault();
+            if (possibleChild != null)
             {
-                currentChild = currentState.PrepareState(pivot, new PivotPoint { X = pivot.X + 1, Y = pivot.Y });
-                DecidePossibleChild(ref possibleChild, currentChild, calculatedRate, ref currentRate);                
+                if (minimumPossible != null && minimumPossible.StateRate < possibleChild.StateRate) possibleChild = minimumPossible;
+                _stateCodes.Add(possibleChild.StateCode);
             }
-            if (pivot.Y-1 >= 0)
-            {
-                currentChild = currentState.PrepareState(pivot, new PivotPoint { X = pivot.X, Y = pivot.Y - 1 });
-                DecidePossibleChild(ref possibleChild, currentChild, calculatedRate, ref currentRate);
-            }
-            if (pivot.Y +1 < currentState.ItemMatrix.GetLength(0))
-            {
-                currentChild = currentState.PrepareState(pivot, new PivotPoint { X = pivot.X, Y = pivot.Y + 1 });
-                DecidePossibleChild(ref possibleChild, currentChild, calculatedRate, ref currentRate);
-            }
-            
-            if(possibleChild != null) _stateCodes.Add(possibleChild.StateCode);
+            else possibleChild = minimumPossible;
             return possibleChild;
         }
 
         private static State PrepareState(this State currentState, PivotPoint oldPoint, PivotPoint newPoint)
         {
-            var newState = new State { PivotPoint = newPoint, PreviousState = currentState, ItemOrder = new List<long>() };
+            var newState = new State { PreviousState = currentState, ItemOrder = new List<long>() };
             var itemMatrix = currentState.ItemMatrix;
             itemMatrix[oldPoint.Y][oldPoint.X] = itemMatrix[newPoint.Y][newPoint.X];
             itemMatrix[newPoint.Y][newPoint.X] = 0;
@@ -84,20 +89,18 @@ namespace _15PuzzleLibrary
                     newState.ItemOrder.Add(itemMatrix[i][j]);
                 }
             }
-
             return newState;
         }
-        private static bool IsOrderedBy(this List<long> list)
+        internal static bool IsOrderedBy(this List<long> list)
         {
             int n = list.Count() - 1;
             var mustBeOrdered = list.TakeWhile((o, i) => i < n);
             var orderedByAsc = mustBeOrdered.OrderBy(d => d);
-            if (mustBeOrdered.SequenceEqual(orderedByAsc))
+            if (mustBeOrdered.SequenceEqual(orderedByAsc) && !mustBeOrdered.Contains(0))
             {
                 return true;
             }
             return false;
         }
-
     }
 }
